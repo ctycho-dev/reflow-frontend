@@ -1,109 +1,57 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Transfer, Token, Protocol } from '@/lib/types'
-import { generateMockTransfers, getMockTokenStats } from '@/lib/mock-data'
+import { useState, useCallback } from 'react'
+import { useStats } from '@/hooks/use-stats'
+import { useTransfers } from '@/hooks/use-transfers'
 import { TokenStatsSidebar } from '@/components/token-stats-sidebar'
-import { TransferFilters } from '@/components/transfer-filters'
-import { TransferTable } from '@/components/transfer-table'
+import { TransferFilters } from '@/app/_components/transfer-filters'
+import { TransferTable } from '@/app/_components/transfer-table'
+
+type Filters = {
+  token: string | 'all'
+  protocol: string | 'all'
+  minAmount: number
+}
 
 export default function LiveFeedPage() {
-  const [transfers, setTransfers] = useState<Transfer[]>([])
-  const [filteredTransfers, setFilteredTransfers] = useState<Transfer[]>([])
-  const [newTransferIds, setNewTransferIds] = useState<Set<string>>(new Set())
-  const [filters, setFilters] = useState<{
-    token: Token | 'all'
-    protocol: Protocol | 'all'
-    minAmount: number
-  }>({ token: 'all', protocol: 'all', minAmount: 0 })
+  const { data: stats = [] } = useStats()
+  const { transfers, newTransferIds, connected, error } = useTransfers()
 
-  const stats = getMockTokenStats()
+  const [filters, setFilters] = useState<Filters>({
+    token: 'all',
+    protocol: 'all',
+    minAmount: 0,
+  })
 
-  // Initial load
-  useEffect(() => {
-    const initial = generateMockTransfers(25)
-    setTransfers(initial)
-    setFilteredTransfers(initial)
-  }, [])
-
-  // Simulate real-time updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const newTransfer = generateMockTransfers(1)[0]
-      newTransfer.timestamp = new Date()
-      newTransfer.id = `tx-${Date.now()}-new`
-
-      setTransfers((prev) => {
-        const updated = [newTransfer, ...prev.slice(0, 49)]
-        return updated
-      })
-
-      setNewTransferIds((prev) => {
-        const updated = new Set(prev)
-        updated.add(newTransfer.id)
-        return updated
-      })
-
-      // Clear new status after animation
-      setTimeout(() => {
-        setNewTransferIds((prev) => {
-          const updated = new Set(prev)
-          updated.delete(newTransfer.id)
-          return updated
-        })
-      }, 3000)
-    }, 4000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  // Apply filters
-  useEffect(() => {
-    let filtered = transfers
-
-    if (filters.token !== 'all') {
-      filtered = filtered.filter((t) => t.token === filters.token)
-    }
-
-    if (filters.protocol !== 'all') {
-      filtered = filtered.filter((t) => t.protocol === filters.protocol)
-    }
-
-    if (filters.minAmount > 0) {
-      filtered = filtered.filter((t) => {
-        const amount = t.token === 'USDC' ? t.amount : t.amountUsd
-        return amount >= filters.minAmount
-      })
-    }
-
-    setFilteredTransfers(filtered)
-  }, [transfers, filters])
-
-  const handleFilterChange = useCallback(
-    (newFilters: { token: Token | 'all'; protocol: Protocol | 'all'; minAmount: number }) => {
-      setFilters(newFilters)
-    },
-    []
-  )
+  const filteredTransfers = transfers.filter((t) => {
+    if (filters.token !== 'all' && t.token.symbol !== filters.token) return false
+    if (filters.protocol !== 'all' && t.counterparty?.protocol?.slug !== filters.protocol) return false
+    if (filters.minAmount > 0 && t.amountDecimal < filters.minAmount) return false
+    return true
+  })
 
   return (
     <div className="flex gap-6 p-6">
       <TokenStatsSidebar stats={stats} />
+
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground">Live Transfer Feed</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Real-time on-chain activity for USDC and weETH
+              Real-time on-chain activity for tracked ERC-20 transfers
             </p>
           </div>
+
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-            Live
+            <span className={`h-2 w-2 rounded-full ${connected ? 'bg-success animate-pulse' : 'bg-destructive'}`} />
+            {connected ? 'Live' : 'Reconnecting…'}
           </div>
         </div>
 
-        <TransferFilters onFilterChange={handleFilterChange} />
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <TransferFilters onFilterChange={setFilters} />
 
         <TransferTable transfers={filteredTransfers} newTransferIds={newTransferIds} />
       </div>

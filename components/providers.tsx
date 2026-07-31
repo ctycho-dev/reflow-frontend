@@ -2,17 +2,26 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WagmiProvider, createConfig, http } from 'wagmi'
-import { mainnet } from 'wagmi/chains'
+import { cookieStorage, createStorage } from 'wagmi'
+import { mainnet, baseSepolia } from 'wagmi/chains'
 import { injected } from 'wagmi/connectors'
 import { ThemeProvider } from 'next-themes'
 import { useState } from 'react'
 
+
 const config = createConfig({
-  chains: [mainnet],
-  connectors: [injected()],
+  chains: [mainnet, baseSepolia],
+  connectors: [
+    injected({
+      target: 'metaMask',  // pin to MetaMask specifically, ignore other injected providers
+    }),
+  ],
   transports: {
     [mainnet.id]: http(),
+    [baseSepolia.id]: http('https://sepolia.base.org'),
   },
+  storage: createStorage({ storage: cookieStorage }),
+  ssr: true,
 })
 
 export function Providers({ children }: { children: React.ReactNode }) {

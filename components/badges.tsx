@@ -1,58 +1,63 @@
 import { cn } from '@/lib/utils'
-import { Token, Protocol } from '@/lib/types'
+import type { ApiProtocol, ApiToken } from '@/lib/types'
 
 interface TokenBadgeProps {
-  token: Token
+  token: ApiToken
   className?: string
 }
 
 export function TokenBadge({ token, className }: TokenBadgeProps) {
+  const symbol = token.symbol
+  const color = token.color ?? 'currentColor'
+
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium',
-        token === 'USDC' && 'bg-usdc/20 text-usdc',
-        token === 'weETH' && 'bg-weeth/20 text-weeth',
         className
       )}
+      style={{
+        backgroundColor: token.color ? `${token.color}20` : undefined,
+        color,
+      }}
     >
       <span
-        className={cn(
-          'h-1.5 w-1.5 rounded-full',
-          token === 'USDC' && 'bg-usdc',
-          token === 'weETH' && 'bg-weeth'
-        )}
+        className="h-1.5 w-1.5 rounded-full"
+        style={{ backgroundColor: color }}
       />
-      {token}
+      {symbol}
     </span>
   )
 }
 
 interface ProtocolTagProps {
-  protocol: Protocol
+  protocol?: ApiProtocol | null
   className?: string
 }
 
 export function ProtocolTag({ protocol, className }: ProtocolTagProps) {
   if (!protocol) return null
 
+  const color = protocol.color ?? 'currentColor'
+
   return (
     <span
       className={cn(
         'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide',
-        protocol === 'Aave' && 'bg-aave/20 text-aave',
-        protocol === 'Uniswap' && 'bg-uniswap/20 text-uniswap',
-        protocol === 'Compound' && 'bg-compound/20 text-compound',
         className
       )}
+      style={{
+        backgroundColor: protocol.color ? `${protocol.color}20` : undefined,
+        color,
+      }}
     >
-      {protocol}
+      {protocol.name}
     </span>
   )
 }
 
 interface StatusBadgeProps {
-  status: 'Active' | 'Ended'
+  status: 'Upcoming' | 'Active' | 'Ended'
   className?: string
 }
 
@@ -62,6 +67,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
         status === 'Active' && 'bg-success/20 text-success',
+        status === 'Upcoming' && 'bg-primary/20 text-primary',
         status === 'Ended' && 'bg-muted text-muted-foreground',
         className
       )}

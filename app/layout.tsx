@@ -4,6 +4,8 @@ import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 import { Providers } from '@/components/providers'
 import { Header } from '@/components/header'
+import { Toaster } from '@/components/ui/sonner'
+
 
 const _geist = Geist({ 
   subsets: ["latin"],
@@ -30,6 +32,7 @@ export default function RootLayout({
         <Providers>
           <Header />
           <main>{children}</main>
+          <Toaster richColors position="top-right" />
         </Providers>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

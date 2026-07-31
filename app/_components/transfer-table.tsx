@@ -1,7 +1,8 @@
+
 'use client'
 
 import { Transfer } from '@/lib/types'
-import { TokenBadge, ProtocolTag } from './badges'
+import { TokenBadge, ProtocolTag } from '../../components/badges'
 import { cn } from '@/lib/utils'
 
 interface TransferTableProps {
@@ -25,14 +26,24 @@ function formatTime(date: Date) {
   return `${hours}h ago`
 }
 
-function formatAmount(amount: number, token: string) {
-  if (token === 'USDC') {
-    return `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function formatAmount(amount: number, tokenSymbol: string) {
+  if (tokenSymbol === 'USDC') {
+    return amount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
   }
-  return `${amount.toFixed(4)} ETH`
+
+  return amount.toLocaleString('en-US', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })
 }
 
-export function TransferTable({ transfers, newTransferIds = new Set() }: TransferTableProps) {
+export function TransferTable({
+  transfers,
+  newTransferIds = new Set(),
+}: TransferTableProps) {
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       <table className="w-full">
@@ -61,6 +72,7 @@ export function TransferTable({ transfers, newTransferIds = new Set() }: Transfe
             </th>
           </tr>
         </thead>
+
         <tbody>
           {transfers.map((transfer) => (
             <tr
@@ -72,34 +84,51 @@ export function TransferTable({ transfers, newTransferIds = new Set() }: Transfe
             >
               <td className="px-4 py-3">
                 <span className="font-mono text-sm text-muted-foreground">
-                  {transfer.block.toLocaleString()}
+                  {transfer.blockNumber.toLocaleString('en-US')}
                 </span>
               </td>
+
               <td className="px-4 py-3">
                 <TokenBadge token={transfer.token} />
               </td>
+
               <td className="px-4 py-3">
                 <span className="font-mono text-sm text-foreground">
-                  {truncateAddress(transfer.from)}
+                  {truncateAddress(transfer.from.address)}
                 </span>
               </td>
+
               <td className="px-4 py-3">
                 <span className="font-mono text-sm text-foreground">
-                  {truncateAddress(transfer.to)}
+                  {truncateAddress(transfer.to.address)}
                 </span>
               </td>
+
               <td className="px-4 py-3 text-right">
-                <span className="font-mono text-sm font-medium text-foreground">
-                  {formatAmount(transfer.amount, transfer.token)}
-                </span>
+                <div className="flex flex-col items-end">
+                  <span className="font-mono text-sm font-medium text-foreground">
+                    {formatAmount(transfer.amountDecimal, transfer.token.symbol)}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {transfer.token.symbol}
+                  </span>
+                </div>
               </td>
+
               <td className="px-4 py-3">
-                {transfer.protocol ? (
-                  <ProtocolTag protocol={transfer.protocol} />
+                {transfer.counterparty?.protocol ? (
+                  <ProtocolTag protocol={{
+                    address: transfer.counterparty.protocol.address,
+                    slug: transfer.counterparty.protocol.slug,
+                    name: transfer.counterparty.protocol.name,
+                    color: transfer.counterparty.protocol.color,
+                    label: transfer.counterparty.protocol.label,
+                  }} />
                 ) : (
                   <span className="text-xs text-muted-foreground">-</span>
                 )}
               </td>
+
               <td className="px-4 py-3 text-right">
                 <div className="flex items-center justify-end gap-2">
                   {newTransferIds.has(transfer.id) && (
