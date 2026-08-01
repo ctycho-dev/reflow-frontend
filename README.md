@@ -1,9 +1,9 @@
 # Reflow Frontend
 
 > **Reflow spans three repositories:**
-> [`reflow`](https://github.com/internoun/reflow) — backend: API, indexer, and workers ·
-> [`reflow-frontend`](https://github.com/internoun/reflow-frontend) — Next.js app ·
-> [`reflow-contract`](https://github.com/internoun/reflow-contract) — Foundry contracts (token + Merkle distributor)
+> - [`reflow`](https://github.com/internoun/reflow) — backend: API, indexer, and workers
+> - [`reflow-frontend`](https://github.com/internoun/reflow-frontend) — Next.js app
+> - [`reflow-contract`](https://github.com/internoun/reflow-contract) — Foundry contracts (token + Merkle distributor)
 
 Next.js frontend for [Reflow](../reflow) — an on-chain activity campaign platform
 on Base Sepolia. Users enroll in campaigns (SIWE), qualify by moving tokens
