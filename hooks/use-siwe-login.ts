@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useConnection, useChainId, useSignMessage } from 'wagmi'
 import { SiweMessage } from 'siwe'
 import { authApi, AuthenticatedWallet } from '@/lib/api/auth'
+import { toast } from 'sonner'
 
 const MESSAGE_EXPIRATION_MS = 5 * 60_000  // 5 minutes — should outlive the user clicking "Sign"
 
@@ -53,6 +54,7 @@ export function useSiweLogin() {
       // 3. Ask the wallet to sign. This opens the MetaMask popup.
       //    EIP-191 personal_sign path — matches what the backend verifies.
       const signature = await signMessage.mutateAsync({ message: preparedMessage })
+      // const signature = await signMessageAsync({ message: preparedMessage })
 
       // 4. Send to backend; on success it sets the httpOnly cookie.
       const { wallet } = await authApi.verify({
@@ -66,6 +68,9 @@ export function useSiweLogin() {
       // Make the auth/me query refetch so any subscribed component sees the
       // new logged-in state immediately.
       queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
+    },
+    onError: (err) => {
+      toast.error('Sign-in failed', { description: err.message })
     },
   })
 }

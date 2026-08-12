@@ -1,7 +1,12 @@
 // lib/mappers/campaigns.ts
 
-
-import { ApiCampaign, CampaignListDTO, Campaign } from "@/lib/types"
+import {
+  ApiCampaign,
+  CampaignListDTO,
+  Campaign,
+  ApiCampaignDetail,
+  CampaignDetail,
+} from '@/lib/types'
 
 export function mapCampaign(c: ApiCampaign): Campaign {
   return {
@@ -18,3 +23,13 @@ export function mapCampaign(c: ApiCampaign): Campaign {
 
 export const mapCampaigns = (data: CampaignListDTO): Campaign[] =>
   data.map(mapCampaign)
+
+export function mapCampaignDetail(c: ApiCampaignDetail): CampaignDetail {
+  return {
+    ...mapCampaign(c),
+    creatorWallet: c.creatorWallet,
+    createTxHash: c.createTxHash,
+    fundedTotal: c.fundedTotal !== null ? BigInt(c.fundedTotal) : null,
+    isFunded: c.isFunded,
+  }
+}

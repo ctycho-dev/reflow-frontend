@@ -9,10 +9,12 @@ import {
   SheetTitle,
   SheetDescription
 } from '@/components/ui/sheet'
-import { TokenBadge, ProtocolTag, StatusBadge } from '../../../components/badges'
+import { TokenBadge, ProtocolTag, StatusBadge } from '@/components/badges'
 import { Progress } from '@/components/ui/progress'
 import { formatVolume, formatRewardAmount } from '@/lib/format'
 import { REWARD_TOKEN_SYMBOL } from '@/lib/contracts'
+import { useCampaignDetail } from '@/hooks/use-campaign-detail'
+import { FundCampaignSection } from './fund-campaign-section'
 
 interface LeaderboardDrawerProps {
   campaign: Campaign | null
@@ -74,6 +76,8 @@ export function LeaderboardDrawer({
   open,
   onOpenChange,
 }: LeaderboardDrawerProps) {
+  const { data: detail } = useCampaignDetail(campaign?.id)
+
   if (!campaign) return null
 
   const status = getCampaignStatus(campaign, new Date())
@@ -97,6 +101,33 @@ export function LeaderboardDrawer({
           <SheetDescription className="text-sm text-muted-foreground">
             {campaign.description}
           </SheetDescription>
+          {detail && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+              <span className="capitalize">{detail.status}</span>
+              {detail.onchainId !== null && (
+                <span>· #{detail.onchainId} on-chain</span>
+              )}
+              {detail.createTxHash && (
+                <a
+                  href={`https://sepolia.basescan.org/tx/${detail.createTxHash}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline hover:text-foreground"
+                >
+                  creation tx ↗
+                </a>
+              )}
+              {detail.status === 'created' && !detail.isFunded && (
+                <span className="text-yellow-500">awaiting funding</span>
+              )}
+              {detail.isFunded && <span className="text-green-500">funded</span>}
+            </div>
+          )}
+          {detail && (
+            <div className="py-4">
+              <FundCampaignSection detail={detail} />
+            </div>
+          )}
         </SheetHeader>
 
         <div className="py-4 space-y-4 border-b border-border">
@@ -163,57 +194,75 @@ export function LeaderboardDrawer({
 
           {leaderboard.length === 0 && !loading ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
-              No enrollments yet.
+              No qualifying activity yet.
             </div>
           ) : (
             <div className="space-y-2">
-              {leaderboard.map((entry, index) => {
-                const rewardDisplay = entry.qualified
-                  ? formatRewardAmount(campaign.rewardAmount)
-                  : '0'
-                const volumeDisplay = formatVolume(
-                  entry.totalVolume,
-                  token?.decimals ?? 18,
-                )
+              {(() => {
+                const qualifiedCount = leaderboard.filter((e) => e.qualified).length
+                return leaderboard.map((entry, index) => {
+                  const volumeDisplay = formatVolume(
+                    entry.totalVolume,
+                    token?.decimals ?? 18,
+                  )
+                  // Pool is equal-split among qualifying wallets at finalize.
+                  // Until then this is a projection over the current qualified set.
+                  const projectedShare =
+                    entry.qualified && qualifiedCount > 0
+                      ? formatRewardAmount(
+                        (BigInt(campaign.rewardAmount) / BigInt(qualifiedCount)).toString(),
+                      )
+                      : null
 
-                return (
-                  <div
-                    key={entry.walletAddress}
-                    className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
-                  >
-                    <span
-                      className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${index === 0
-                        ? 'bg-yellow-500/20 text-yellow-500'
-                        : index === 1
-                          ? 'bg-gray-400/20 text-gray-400'
-                          : index === 2
-                            ? 'bg-orange-500/20 text-orange-500'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
+                  return (
+                    <div
+                      key={entry.walletAddress}
+                      className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
                     >
-                      {entry.rank}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-mono text-sm text-foreground truncate">
-                        {truncateAddress(entry.walletAddress)}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {volumeDisplay} {token?.symbol ?? ''} volume
-                      </p>
+                      <span
+                        className={`w-6 h-6 flex items-center justify-center rounded-full text-xs font-bold ${index === 0
+                          ? 'bg-yellow-500/20 text-yellow-500'
+                          : index === 1
+                            ? 'bg-gray-400/20 text-gray-400'
+                            : index === 2
+                              ? 'bg-orange-500/20 text-orange-500'
+                              : 'bg-muted text-muted-foreground'
+                          }`}
+                      >
+                        {entry.rank}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-mono text-sm text-foreground truncate">
+                          {truncateAddress(entry.walletAddress)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {volumeDisplay} {token?.symbol ?? ''} volume
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        {projectedShare ? (
+                          <>
+                            <p className="font-mono text-sm font-medium text-primary">
+                              ~{projectedShare}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {REWARD_TOKEN_SYMBOL} est.
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">
+                            below threshold
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-mono text-sm font-medium text-primary">
-                        {rewardDisplay}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{REWARD_TOKEN_SYMBOL}</p>
-                    </div>
-                  </div>
-                )
-              })}
+                  )
+                })
+              })()}
             </div>
           )}
         </div>
       </SheetContent>
-    </Sheet>
+    </Sheet >
   )
 }

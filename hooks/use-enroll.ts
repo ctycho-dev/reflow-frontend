@@ -5,6 +5,8 @@ import { campaignsApi } from '@/lib/api/campaigns'
 import { Campaign, Enrollment } from '@/lib/types'
 import { useCurrentWallet } from './use-current-wallet'
 import { useSiweLogin } from './use-siwe-login'
+import { ApiError } from '@/lib/api'
+import { toast } from 'sonner'
 
 const MIN_ENROLL_DURATION_MS = 600
 
@@ -46,6 +48,11 @@ export function useEnroll() {
       )
       queryClient.invalidateQueries({ queryKey: ['eligibility', address, chainId] })
       queryClient.invalidateQueries({ queryKey: ['leaderboard', campaignId] })
+    },
+    onError: (err) => {
+      toast.error('Could not enroll', {
+        description: err instanceof ApiError ? err.detail : err.message,
+      })
     },
   })
 }

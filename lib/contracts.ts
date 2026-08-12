@@ -25,4 +25,41 @@ export const distributorAbi = [
   },
   { type: 'error', name: 'AlreadyClaimed', inputs: [] },
   { type: 'error', name: 'InvalidProof', inputs: [] },
+  {
+    type: 'function',
+    name: 'createCampaign',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'targetToken', type: 'address' },
+      { name: 'target', type: 'address' },
+      { name: 'startTime', type: 'uint64' },
+      { name: 'endTime', type: 'uint64' },
+      { name: 'rewardTotal', type: 'uint256' },
+    ],
+    outputs: [{ name: 'campaignId', type: 'uint256' }],
+  },
+  {
+    type: 'function',
+    name: 'fundCampaign',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'campaignId', type: 'uint256' },
+      { name: 'amount', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'event',
+    name: 'CampaignCreated',
+    inputs: [
+      { name: 'campaignId', type: 'uint256', indexed: true },
+      { name: 'creator', type: 'address', indexed: true },
+      { name: 'targetToken', type: 'address', indexed: true },
+      { name: 'target', type: 'address', indexed: false },
+      { name: 'startTime', type: 'uint64', indexed: false },
+      { name: 'endTime', type: 'uint64', indexed: false },
+      { name: 'rewardTotal', type: 'uint256', indexed: false },
+    ],
+  },
+  
 ] as const satisfies Abi

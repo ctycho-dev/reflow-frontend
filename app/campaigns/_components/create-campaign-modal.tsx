@@ -1,6 +1,11 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useAccount, useWriteContract, usePublicClient } from 'wagmi'
+import { parseEventLogs } from 'viem'
+import { useAuthMe } from '@/hooks/use-auth'
+import { ApiError } from '@/lib/api'
+import { useSiweLogin } from '@/hooks/use-siwe-login'
 import { useTokens } from '@/hooks/use-tokens'
 import { useProtocols } from '@/hooks/use-protocols'
 import { campaignsApi } from '@/lib/api/campaigns'
@@ -28,29 +33,64 @@ import {
 import { toast } from 'sonner'
 import {
   CHAIN_ID,
+  DISTRIBUTOR_ADDRESS,
+  distributorAbi,
   REWARD_TOKEN_DECIMALS,
   REWARD_TOKEN_SYMBOL,
 } from '@/lib/contracts'
+import { toBaseUnits } from '@/app/utils/helpers'
 
 interface CreateCampaignModalProps {
   onCreated?: () => void
 }
 
-function toBaseUnits(humanValue: string, decimals: number): string {
-  // Convert "0.5" + 18 → "500000000000000000"
-  // Done with string ops to avoid float precision loss.
-  const [whole, frac = ''] = humanValue.split('.')
-  const fracPadded = (frac + '0'.repeat(decimals)).slice(0, decimals)
-  const combined = (whole + fracPadded).replace(/^0+(?=\d)/, '')
-  return combined === '' ? '0' : combined
+type Step = 'idle' | 'draft' | 'wallet' | 'confirming' | 'linking'
+
+const STEP_LABEL: Record<Step, string> = {
+  idle: 'Create',
+  draft: 'Saving draft…',
+  wallet: 'Confirm in wallet…',
+  confirming: 'Waiting for confirmation…',
+  linking: 'Linking…',
+}
+
+const DAY_MS = 86_400_000
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function linkWithRetry(
+  campaignId: number,
+  body: { onchainId: number; txHash: string },
+) {
+  // 409 = Envio hasn't indexed the creation block yet — poll.
+  // 422 = params mismatch — a bug, never retry.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await campaignsApi.link(campaignId, body)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409 && attempt < 5) {
+        await sleep(2000)
+        continue
+      }
+      throw err
+    }
+  }
 }
 
 export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
+  const { isConnected } = useAccount()
+  const { data: session } = useAuthMe()
+  const siweLogin = useSiweLogin()
+  const authed = isConnected && !!session
+
+  const { writeContractAsync } = useWriteContract()
+  const publicClient = usePublicClient()
+
   const { data: tokens = [] } = useTokens()
   const { data: protocols = [] } = useProtocols()
 
   const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [step, setStep] = useState<Step>('idle')
   const [error, setError] = useState<string | null>(null)
 
   const [name, setName] = useState('')
@@ -64,6 +104,7 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
   const [maxRecipients, setMaxRecipients] = useState('100')
 
   const selectedToken = tokens.find((t) => t.address === tokenAddress)
+  const busy = step !== 'idle'
 
   const reset = () => {
     setName('')
@@ -80,6 +121,10 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!authed) {
+      setError('Sign in with your wallet first')
+      return
+    }
     if (!selectedToken) {
       setError('Pick a token')
       return
@@ -88,37 +133,101 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
       setError('Pick a target contract')
       return
     }
+    if (!publicClient) {
+      setError('Wallet client not ready')
+      return
+    }
 
-    setSubmitting(true)
+    // One source of truth for the window: both the draft's ISO strings and the
+    // tx's epoch seconds derive from these two Date objects. Two independent
+    // conversions could disagree; one cannot.
+    const startDate = new Date(startsAt)
+    const endDate = new Date(startDate.getTime() + parseInt(durationDays, 10) * DAY_MS)
+    if (startDate.getTime() <= Date.now()) {
+      setError('Start must be in the future — the contract rejects past start times')
+      return
+    }
+
     setError(null)
+    const rewardWei = toBaseUnits(rewardAmount, REWARD_TOKEN_DECIMALS)
+
+    let draftId: number | null = null
+    let currentStep: Step = 'idle'
+    const advance = (s: Step) => {
+      currentStep = s
+      setStep(s)
+    }
 
     try {
-      await campaignsApi.create({
+      // 1 — persist intent before the irreversible action (dual-write)
+      advance('draft')
+      const draft = await campaignsApi.createDraft({
         name,
         description: description || null,
         chainId: CHAIN_ID,
         tokenAddress: selectedToken.address,
         targetContractAddress: protocolAddress,
         minTotalVolume: toBaseUnits(minVolume, selectedToken.decimals),
-        rewardAmount: toBaseUnits(rewardAmount, REWARD_TOKEN_DECIMALS),
-        durationDays: parseInt(durationDays, 10),
-        startsAt: new Date(startsAt).toISOString(),
+        rewardAmount: rewardWei,
+        startsAt: startDate.toISOString(),
+        endsAt: endDate.toISOString(),
         maxRecipients: parseInt(maxRecipients, 10),
+      })
+      draftId = draft.id
+
+      // 2 — createCampaign from the user's wallet
+      advance('wallet')
+      const txHash = await writeContractAsync({
+        address: DISTRIBUTOR_ADDRESS,
+        abi: distributorAbi,
+        functionName: 'createCampaign',
+        args: [
+          selectedToken.address as `0x${string}`,
+          protocolAddress as `0x${string}`,
+          BigInt(Math.floor(startDate.getTime() / 1000)),
+          BigInt(Math.floor(endDate.getTime() / 1000)),
+          BigInt(rewardWei),
+        ],
+      })
+
+      advance('confirming')
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
+      const [created] = parseEventLogs({
+        abi: distributorAbi,
+        eventName: 'CampaignCreated',
+        logs: receipt.logs.filter(
+          (l) => l.address.toLowerCase() === DISTRIBUTOR_ADDRESS.toLowerCase(),
+        ),
+      })
+      if (!created) throw new Error('CampaignCreated event not found in receipt')
+
+      // 3 — bind draft to chain; backend verifies creator + params vs Envio
+      advance('linking')
+      await linkWithRetry(draftId, {
+        onchainId: Number(created.args.campaignId),
+        txHash,
       })
 
       setOpen(false)
       reset()
       onCreated?.()
-
-      toast.success('Campaign created', {
-        description: name,
-      })
+      toast.success('Campaign created on-chain', { description: name })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to create campaign'
-      toast.error('Could not create campaign', { description: message })
+      const message =
+        err instanceof ApiError && err.status === 409
+          ? 'Transaction confirmed, but indexing is taking longer than usual. It will link automatically on your next visit.'
+          : err instanceof Error
+            ? err.message
+            : 'Failed to create campaign'
+
+      if (draftId !== null && currentStep !== 'draft') {
+        toast.error('Creation interrupted', { description: message })
+      } else {
+        toast.error('Could not create campaign', { description: message })
+      }
       setError(message)
     } finally {
-      setSubmitting(false)
+      setStep('idle')
     }
   }
 
@@ -136,6 +245,7 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
     <Dialog
       open={open}
       onOpenChange={(o) => {
+        if (busy) return // never close mid-flow — a wallet prompt may be pending
         setOpen(o)
         if (!o) reset()
       }}
@@ -157,7 +267,8 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
         <DialogHeader>
           <DialogTitle>Create Campaign</DialogTitle>
           <DialogDescription>
-            Configure campaign rules and reward.
+            Campaign is created on-chain from your wallet. You fund it in a
+            separate step.
           </DialogDescription>
         </DialogHeader>
 
@@ -224,6 +335,7 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
               </Select>
             </div>
           </div>
+
           <div className="space-y-2">
             <Label htmlFor="minVolume">
               Minimum Volume {selectedToken && `(${selectedToken.symbol})`}
@@ -270,7 +382,7 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="rewardAmount">
-                Reward ({REWARD_TOKEN_SYMBOL})
+                Reward Pool ({REWARD_TOKEN_SYMBOL})
               </Label>
               <Input
                 id="rewardAmount"
@@ -298,21 +410,39 @@ export function CreateCampaignModal({ onCreated }: CreateCampaignModalProps) {
             </div>
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {!isConnected ? (
+            <p className="text-sm text-muted-foreground">
+              Connect your wallet to create a campaign.
+            </p>
+          ) : !session ? (
+            <div className="flex items-center justify-between rounded-lg bg-secondary/30 p-3">
+              <p className="text-sm text-muted-foreground">
+                Sign in to prove wallet ownership.
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => siweLogin.mutate()}
+                disabled={siweLogin.isPending}
+              >
+                {siweLogin.isPending ? 'Check wallet…' : 'Sign in'}
+              </Button>
+            </div>
+          ) : null}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-3 pt-4">
             <Button
               type="button"
               variant="outline"
               onClick={() => setOpen(false)}
-              disabled={submitting}
+              disabled={busy}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? 'Creating…' : 'Create'}
+            <Button type="submit" disabled={busy || !authed}>
+              {STEP_LABEL[step]}
             </Button>
           </div>
         </form>

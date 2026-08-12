@@ -10,6 +10,7 @@ const navItems = [
   { href: '/', label: 'Live Feed' },
   { href: '/campaigns', label: 'Campaigns' },
   { href: '/wallet', label: 'Wallet Explorer' },
+  { href: '/faucet', label: 'Faucet' },
 ]
 
 export function Header() {

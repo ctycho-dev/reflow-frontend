@@ -2,6 +2,8 @@
 
 import { useState, useMemo } from 'react'
 import { useAccount } from 'wagmi'
+import { useReconcileDraft } from '@/hooks/use-reconcile'
+import { useAuthMe } from '@/hooks/use-auth'
 import { useCampaigns } from '@/hooks/use-campaigns'
 import { useTokens } from '@/hooks/use-tokens'
 import { useProtocols } from '@/hooks/use-protocols'
@@ -14,13 +16,12 @@ import { CreateCampaignModal } from '@/app/campaigns/_components/create-campaign
 import { LeaderboardDrawer } from '@/app/campaigns/_components/leaderboard-drawer'
 import { CHAIN_ID } from '@/lib/contracts'
 
-type CampaignStatus = 'Upcoming' | 'Active' | 'Ended'
-
-function getCampaignStatus(c: Campaign, now: Date): CampaignStatus {
-    if (now < c.startsAt) return 'Upcoming'
-    if (now > c.endsAt) return 'Ended'
-    return 'Active'
-}
+const SECTION_ORDER = [
+    { title: 'Active Campaigns', statuses: ['live'] },
+    { title: 'Upcoming Campaigns', statuses: ['funded'] },
+    { title: 'Awaiting Funding', statuses: ['created'] },
+    { title: 'Ended Campaigns', statuses: ['ended', 'settling', 'settled'] },
+] as const
 
 function Section({
     title,
@@ -46,6 +47,7 @@ function Section({
 
 export default function CampaignsPage() {
     const { address, isConnected } = useAccount()
+    const { data: session } = useAuthMe()
 
     const { data: campaigns = [], refresh } = useCampaigns(CHAIN_ID)
     const { data: tokens = [] } = useTokens()
@@ -56,6 +58,8 @@ export default function CampaignsPage() {
     const { data: leaderboard = [], isLoading: leaderboardLoading } = useLeaderboard(
         selectedCampaign?.id,
     )
+
+    useReconcileDraft(isConnected && !!session)
 
     const enroll = useEnroll()
 
@@ -75,19 +79,15 @@ export default function CampaignsPage() {
         [eligibility],
     )
 
-    const { upcoming, active, ended } = useMemo(() => {
-        const now = new Date()
-        const upcoming: Campaign[] = []
-        const active: Campaign[] = []
-        const ended: Campaign[] = []
-        for (const c of campaigns) {
-            const s = getCampaignStatus(c, now)
-            if (s === 'Upcoming') upcoming.push(c)
-            else if (s === 'Active') active.push(c)
-            else ended.push(c)
-        }
-        return { upcoming, active, ended }
-    }, [campaigns])
+    const sections = useMemo(
+        () =>
+            SECTION_ORDER.map((s) => ({
+                title: s.title,
+                campaigns: campaigns.filter((c) => s.statuses.includes(c.status as never)),
+            })),
+        [campaigns],
+    )
+
 
     const renderCard = (campaign: Campaign) => (
         <CampaignCard
@@ -127,9 +127,9 @@ export default function CampaignsPage() {
                 <CreateCampaignModal onCreated={refresh} />
             </div>
 
-            <Section title="Active Campaigns" campaigns={active} renderCard={renderCard} />
-            <Section title="Upcoming Campaigns" campaigns={upcoming} renderCard={renderCard} />
-            <Section title="Ended Campaigns" campaigns={ended} renderCard={renderCard} />
+            {sections.map((s) => (
+                <Section key={s.title} title={s.title} campaigns={s.campaigns} renderCard={renderCard} />
+            ))}
 
             <LeaderboardDrawer
                 campaign={selectedCampaign}
