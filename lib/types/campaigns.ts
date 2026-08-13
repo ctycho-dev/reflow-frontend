@@ -24,6 +24,7 @@ export interface ApiCampaign {
   enrolledCount: number
   status: CampaignStatus
   onchainId: number | null
+  creatorWallet: string | null 
   createdAt: string
 }
 
@@ -43,6 +44,7 @@ export interface Campaign {
   enrolledCount: number
   status: CampaignStatus
   onchainId: number | null
+  creatorWallet: string | null 
   createdAt: Date
   // derived
   isFull: boolean

@@ -15,6 +15,11 @@ import { CampaignCard } from '@/app/campaigns/_components/campaign-card'
 import { CreateCampaignModal } from '@/app/campaigns/_components/create-campaign-modal'
 import { LeaderboardDrawer } from '@/app/campaigns/_components/leaderboard-drawer'
 import { CHAIN_ID } from '@/lib/contracts'
+import { toast } from 'sonner'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { Button } from '@/components/ui/button'
+import { campaignsApi } from '@/lib/api/campaigns'
+import { ApiError } from '@/lib/api'
 
 const SECTION_ORDER = [
     { title: 'Active Campaigns', statuses: ['live'] },
@@ -60,6 +65,52 @@ export default function CampaignsPage() {
     )
 
     useReconcileDraft(isConnected && !!session)
+
+    const queryClient = useQueryClient()
+
+    // Server scopes drafts to their owner; this filter is belt-and-braces.
+    const drafts = useMemo(
+        () =>
+            campaigns.filter(
+                (c) =>
+                    c.status === 'draft' &&
+                    !!address &&
+                    c.creatorWallet === address.toLowerCase(),
+            ),
+        [campaigns, address],
+    )
+
+    const retryLink = useMutation({
+        mutationFn: () => campaignsApi.reconcile(),
+        onSuccess: (healed) => {
+            if (healed) {
+                toast.success('Campaign linked', { description: `"${healed.name}" is now on-chain.` })
+            } else {
+                toast.info('Nothing to link yet', {
+                    description: 'No matching on-chain campaign found. If the transaction never confirmed, delete the draft and create again.',
+                })
+            }
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+        },
+        onError: (err) => {
+            toast.error('Retry failed', {
+                description: err instanceof ApiError ? err.detail : err.message,
+            })
+        },
+    })
+
+    const deleteDraft = useMutation({
+        mutationFn: (id: number) => campaignsApi.deleteDraft(id),
+        onSuccess: () => {
+            toast.success('Draft deleted')
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] })
+        },
+        onError: (err) => {
+            toast.error('Could not delete', {
+                description: err instanceof ApiError ? err.detail : err.message,
+            })
+        },
+    })
 
     const enroll = useEnroll()
 
@@ -126,6 +177,50 @@ export default function CampaignsPage() {
                 </div>
                 <CreateCampaignModal onCreated={refresh} />
             </div>
+
+            {drafts.length > 0 && (
+                <section className="mb-10">
+                    <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-4">
+                        Your Drafts ({drafts.length})
+                    </h2>
+                    <div className="space-y-2">
+                        {drafts.map((d) => (
+                            <div
+                                key={d.id}
+                                className="flex items-center justify-between rounded-lg border border-border bg-card p-4"
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-sm font-medium text-foreground truncate">{d.name}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                        Not linked to an on-chain campaign. If your transaction confirmed,
+                                        retry the link; otherwise delete and create again.
+                                    </p>
+                                </div>
+                                <div className="flex gap-2 shrink-0 ml-4">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="cursor-pointer"
+                                        onClick={() => retryLink.mutate()}
+                                        disabled={retryLink.isPending}
+                                    >
+                                        {retryLink.isPending ? 'Checking…' : 'Retry link'}
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="cursor-pointer text-destructive"
+                                        onClick={() => deleteDraft.mutate(d.id)}
+                                        disabled={deleteDraft.isPending}
+                                    >
+                                        Delete
+                                    </Button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+            )}
 
             {sections.map((s) => (
                 <Section key={s.title} title={s.title} campaigns={s.campaigns} renderCard={renderCard} />

@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils'
-import type { ApiProtocol, ApiToken } from '@/lib/types'
+import type { Protocol, Token, CampaignStatus } from '@/lib/types'
 
 interface TokenBadgeProps {
-  token: ApiToken
+  token: Token
   className?: string
 }
 
@@ -31,7 +31,7 @@ export function TokenBadge({ token, className }: TokenBadgeProps) {
 }
 
 interface ProtocolTagProps {
-  protocol?: ApiProtocol | null
+  protocol?: Protocol | null
   className?: string
 }
 
@@ -56,26 +56,43 @@ export function ProtocolTag({ protocol, className }: ProtocolTagProps) {
   )
 }
 
+const STATUS_BADGE: Record <
+  CampaignStatus,
+  { label: string; className: string; pulse?: boolean }
+> = {
+  draft:    { label: 'Draft',            className: 'bg-muted text-muted-foreground' },
+  created:  { label: 'Awaiting funding', className: 'bg-warning/20 text-warning' },
+  funded:   { label: 'Upcoming',         className: 'bg-primary/20 text-primary' },
+  live:     { label: 'Active',           className: 'bg-success/20 text-success', pulse: true },
+  ended:    { label: 'Ended',            className: 'bg-muted text-muted-foreground' },
+  settling: { label: 'Settling',         className: 'bg-muted text-muted-foreground' },
+  settled:  { label: 'Settled',          className: 'bg-muted text-muted-foreground' },
+}
+
 interface StatusBadgeProps {
-  status: 'Upcoming' | 'Active' | 'Ended'
+  status: CampaignStatus
   className?: string
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
+  const cfg = STATUS_BADGE[status] ?? {
+    label: status,
+    className: 'bg-muted text-muted-foreground',
+  }
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
-        status === 'Active' && 'bg-success/20 text-success',
-        status === 'Upcoming' && 'bg-primary/20 text-primary',
-        status === 'Ended' && 'bg-muted text-muted-foreground',
-        className
+        cfg.className,
+        className,
       )}
     >
-      {status === 'Active' && (
+      {cfg.pulse && (
         <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
       )}
-      {status}
+      {cfg.label}
     </span>
   )
 }
+
+

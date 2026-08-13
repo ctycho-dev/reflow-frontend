@@ -1,4 +1,3 @@
-// app/wallet/_components/wallet-rewards.tsx
 'use client'
 
 import { useAccount } from 'wagmi'
@@ -7,10 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useWalletClaims } from '@/hooks/use-wallet-claims'
 import { useClaimReward, isAlreadyClaimedError } from '@/hooks/use-claim-reward'
+import { WalletClaim } from '@/lib/types'
 import { formatRewardAmount } from '@/lib/format'
 import { explorerTxUrl } from '@/lib/explorer'
 import { ExternalLinkIcon } from '@/components/external-link-icon'
-import { toast } from 'sonner'   // or your use-toast — match the enroll flow
+import { toast } from 'sonner'
 
 export function WalletRewards({ address }: { address: string }) {
   const { address: connectedAddress } = useAccount()
@@ -20,26 +20,30 @@ export function WalletRewards({ address }: { address: string }) {
   const { data: claims = [], isLoading } = useWalletClaims(address)
   const claim = useClaimReward()
 
-  const onClaim = (campaignId: number) => {
-    claim.mutate(campaignId, {
-      onSuccess: ({ txHash, alreadyClaimed }) => {
-        if (alreadyClaimed) {
-          toast.info('Already claimed — refreshing')
-          return
-        }
-        toast.success('Reward claimed', { description: txHash })
+  const onClaim = (c: WalletClaim) => {
+    if (c.onchainId == null) return
+    claim.mutate(
+      { campaignId: c.campaignId, onchainId: c.onchainId },
+      {
+        onSuccess: ({ txHash, alreadyClaimed }) => {
+          if (alreadyClaimed) {
+            toast.info('Already claimed — refreshing')
+            return
+          }
+          toast.success('Reward claimed', { description: txHash })
+        },
+        onError: (err) => {
+          if (isAlreadyClaimedError(err)) {
+            toast.info('Already claimed — refreshing')
+            return
+          }
+          toast.error('Claim failed', { description: err.message })
+        },
       },
-      onError: (err) => {
-        if (isAlreadyClaimedError(err)) {
-          toast.info('Already claimed — refreshing')
-          return
-        }
-        toast.error('Claim failed', { description: err.message })
-      },
-    })
+    )
   }
 
-  if (isLoading || claims.length === 0) return null  // explorer page: no empty-state noise
+  if (isLoading || claims.length === 0) return null // explorer page: no empty-state noise
 
   return (
     <Card className="bg-card border-border">
@@ -49,7 +53,7 @@ export function WalletRewards({ address }: { address: string }) {
       <CardContent className="divide-y divide-border">
         {claims.map((c) => {
           const claimingThis =
-            claim.isPending && claim.variables === c.campaignId
+            claim.isPending && claim.variables?.campaignId === c.campaignId
 
           return (
             <div key={c.campaignId} className="flex items-center justify-between py-3">
@@ -76,9 +80,9 @@ export function WalletRewards({ address }: { address: string }) {
                 isOwnWallet ? (
                   <Button
                     size="sm"
-                    onClick={() => onClaim(c.campaignId)}
-                    disabled={claimingThis}
-                    className="min-w-[6rem]"
+                    onClick={() => onClaim(c)}
+                    disabled={claimingThis || c.onchainId == null}
+                    className="min-w-[6rem] cursor-pointer"
                   >
                     {claimingThis ? 'Claiming…' : 'Claim'}
                   </Button>

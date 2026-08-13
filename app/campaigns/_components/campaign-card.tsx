@@ -48,13 +48,19 @@ export function CampaignCard({
 
   // Single component that picks the right state-driven label/style
   const renderEnrollButton = () => {
-    if (status !== 'Active') return null
-
     const baseClasses = 'min-w-[6.5rem] cursor-pointer'
-
     const wrap = (children: React.ReactNode) => (
       <div onClick={(e) => e.stopPropagation()}>{children}</div>
     )
+
+    if (campaign.status === 'created') {
+      return wrap(
+        <Button size="sm" variant="outline" disabled className={baseClasses}>
+          Awaiting funding
+        </Button>,
+      )
+    }
+    if (campaign.status !== 'live') return null
 
     if (!walletConnected) {
       return wrap(

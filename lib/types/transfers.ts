@@ -1,11 +1,11 @@
 // lib/types/transfers.ts
-import { ApiProtocol, Protocol } from "@/lib/types"
-import { ApiToken, Token } from "@/lib/types"
+import { Protocol } from "@/lib/types"
+import { Token } from "@/lib/types"
 
 
 export interface ApiCounterparty {
   address: string
-  protocol?: ApiProtocol | null
+  protocol?: Protocol | null
   label?: string | null
 }
 
@@ -18,7 +18,7 @@ export interface ApiTransfer {
   fromAddress: string
   toAddress: string
   amountRaw: string
-  token: ApiToken
+  token: Token
   counterparty?: ApiCounterparty | null
 }
 

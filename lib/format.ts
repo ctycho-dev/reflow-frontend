@@ -11,22 +11,26 @@ import { formatUnits } from 'viem'
 export const REWARD_TOKEN_DECIMALS = 18 // REFLOW — single source, shared with the create form
 
 export function formatVolume(
-  weiString: string,
+  wei: string | bigint,
   decimals: number = 18,
   fractionDigits: number = 2,
 ): string {
-  if (!weiString || weiString === '0') return '0'
-
-  let wei: bigint
-  try {
-    wei = BigInt(weiString)
-  } catch {
-    return weiString  // fallback: show raw if it's not a valid bigint
+  let value: bigint
+  if (typeof wei === 'bigint') {
+    value = wei
+  } else {
+    if (!wei || wei === '0') return '0'
+    try {
+      value = BigInt(wei)
+    } catch {
+      return wei // fallback: show raw if it's not a valid bigint
+    }
   }
+  if (value === 0n) return '0'
 
-  const divisor = BigInt(10) ** BigInt(decimals)
-  const whole = wei / divisor
-  const fraction = wei % divisor
+  const divisor = 10n ** BigInt(decimals)
+  const whole = value / divisor
+  const fraction = value % divisor
 
   const fractionStr = fraction
     .toString()
@@ -35,7 +39,6 @@ export function formatVolume(
 
   return `${whole.toLocaleString('en-US')}.${fractionStr}`
 }
-
 
 /**
  * Wei-string → compact human display: "1000", "0.5", "1.2M".

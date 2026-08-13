@@ -7,14 +7,16 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-  SheetDescription
+  SheetDescription,
 } from '@/components/ui/sheet'
+import { Button } from '@/components/ui/button'
 import { TokenBadge, ProtocolTag, StatusBadge } from '@/components/badges'
 import { Progress } from '@/components/ui/progress'
 import { formatVolume, formatRewardAmount } from '@/lib/format'
 import { REWARD_TOKEN_SYMBOL } from '@/lib/contracts'
 import { useCampaignDetail } from '@/hooks/use-campaign-detail'
 import { FundCampaignSection } from './fund-campaign-section'
+import { toast } from 'sonner'
 
 interface LeaderboardDrawerProps {
   campaign: Campaign | null
@@ -24,14 +26,6 @@ interface LeaderboardDrawerProps {
   loading?: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
-}
-
-type CampaignStatus = 'Upcoming' | 'Active' | 'Ended'
-
-function getCampaignStatus(c: Campaign, now: Date): CampaignStatus {
-  if (now < c.startsAt) return 'Upcoming'
-  if (now > c.endsAt) return 'Ended'
-  return 'Active'
 }
 
 function truncateAddress(address: string) {
@@ -46,23 +40,20 @@ function formatDate(d: Date): string {
   })
 }
 
-function relativeTime(
-  d: Date,
-  status: CampaignStatus,
-  which: 'start' | 'end',
-): string {
-  const now = new Date()
-  const diffMs = d.getTime() - now.getTime()
-  const days = Math.round(Math.abs(diffMs) / 86_400_000)
+function relativeTime(c: Campaign, which: 'start' | 'end'): string {
+  const now = Date.now()
+  const target = (which === 'start' ? c.startsAt : c.endsAt).getTime()
+  const days = Math.round(Math.abs(target - now) / 86_400_000)
+  const plural = days === 1 ? '' : 's'
 
-  if (status === 'Upcoming' && which === 'start') {
-    return days === 0 ? 'today' : `in ${days} day${days === 1 ? '' : 's'}`
+  if (which === 'start' && (c.status === 'funded' || c.status === 'created')) {
+    return target > now ? (days === 0 ? 'today' : `in ${days} day${plural}`) : ''
   }
-  if (status === 'Active' && which === 'end') {
-    return days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} left`
-  }
-  if (status === 'Ended' && which === 'end') {
-    return days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`
+  if (which === 'end') {
+    if (c.status === 'live') return days === 0 ? 'today' : `${days} day${plural} left`
+    if (['ended', 'settling', 'settled'].includes(c.status)) {
+      return days === 0 ? 'today' : `${days} day${plural} ago`
+    }
   }
   return ''
 }
@@ -80,13 +71,12 @@ export function LeaderboardDrawer({
 
   if (!campaign) return null
 
-  const status = getCampaignStatus(campaign, new Date())
   const progress = campaign.maxRecipients > 0
     ? (campaign.enrolledCount / campaign.maxRecipients) * 100
     : 0
 
-  const startsRelative = relativeTime(campaign.startsAt, status, 'start')
-  const endsRelative = relativeTime(campaign.endsAt, status, 'end')
+  const startsRelative = relativeTime(campaign, 'start')
+  const endsRelative = relativeTime(campaign, 'end')
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -95,21 +85,23 @@ export function LeaderboardDrawer({
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             {token && <TokenBadge token={token} />}
             {protocol && <ProtocolTag protocol={protocol} />}
-            <StatusBadge status={status} />
+            <StatusBadge status={campaign.status} />
           </div>
           <SheetTitle className="text-xl">{campaign.name}</SheetTitle>
           <SheetDescription className="text-sm text-muted-foreground">
             {campaign.description}
           </SheetDescription>
+
+          {/* on-chain identity strip */}
           {detail && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
               <span className="capitalize">{detail.status}</span>
-              {detail.onchainId !== null && (
+              {detail.onchainId != null && (
                 <span>· #{detail.onchainId} on-chain</span>
               )}
               {detail.createTxHash && (
-                <a
-                  href={`https://sepolia.basescan.org/tx/${detail.createTxHash}`}
+                
+                <a  href={`https://sepolia.basescan.org/tx/${detail.createTxHash}`}
                   target="_blank"
                   rel="noreferrer"
                   className="underline hover:text-foreground"
@@ -123,9 +115,38 @@ export function LeaderboardDrawer({
               {detail.isFunded && <span className="text-green-500">funded</span>}
             </div>
           )}
-          {detail && (
-            <div className="py-4">
-              <FundCampaignSection detail={detail} />
+
+          {/* how to qualify — always visible; copy adapts to window state */}
+          {campaign.targetContractAddress && (
+            <div className="rounded-lg bg-secondary/30 p-4 space-y-2 mt-2">
+              <p className="text-sm font-medium text-foreground">How to qualify</p>
+              <p className="text-xs text-muted-foreground">
+                Transfer at least{' '}
+                <span className="font-mono text-foreground">
+                  {formatVolume(campaign.minTotalVolume, token?.decimals ?? 18)}{' '}
+                  {token?.symbol}
+                </span>{' '}
+                to the target address{' '}
+                {campaign.status === 'live'
+                  ? 'during the campaign window, then enroll.'
+                  : 'once the campaign is live, then enroll. Transfers outside the window do not count.'}
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="text-xs font-mono bg-background rounded px-2 py-1 truncate">
+                  {campaign.targetContractAddress}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="cursor-pointer shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(campaign.targetContractAddress!)
+                    toast.success('Address copied')
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
             </div>
           )}
         </SheetHeader>
@@ -136,7 +157,9 @@ export function LeaderboardDrawer({
               <p className="text-2xl font-bold font-mono text-primary">
                 {formatRewardAmount(campaign.rewardAmount)}
               </p>
-              <p className="text-xs text-muted-foreground">{REWARD_TOKEN_SYMBOL}</p>
+              <p className="text-xs text-muted-foreground">
+                {REWARD_TOKEN_SYMBOL} pool
+              </p>
             </div>
             <div className="text-center">
               <p className="text-2xl font-bold font-mono text-foreground">
@@ -182,6 +205,13 @@ export function LeaderboardDrawer({
           </div>
         </div>
 
+        {/* creator-only, self-hides when funded */}
+        {detail && (
+          <div className="py-4">
+            <FundCampaignSection detail={detail} />
+          </div>
+        )}
+
         <div className="py-4 px-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
@@ -210,8 +240,8 @@ export function LeaderboardDrawer({
                   const projectedShare =
                     entry.qualified && qualifiedCount > 0
                       ? formatRewardAmount(
-                        (BigInt(campaign.rewardAmount) / BigInt(qualifiedCount)).toString(),
-                      )
+                          campaign.rewardAmount / BigInt(qualifiedCount),
+                        )
                       : null
 
                   return (
@@ -263,6 +293,6 @@ export function LeaderboardDrawer({
           )}
         </div>
       </SheetContent>
-    </Sheet >
+    </Sheet>
   )
 }

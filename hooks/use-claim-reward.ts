@@ -1,9 +1,13 @@
-// hooks/use-claim-reward.ts
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi'
 import { BaseError, ContractFunctionRevertedError } from 'viem'
 import { rewardsApi } from '@/lib/api/rewards'
 import { CHAIN_ID, DISTRIBUTOR_ADDRESS, distributorAbi } from '@/lib/contracts'
+
+export interface ClaimArgs {
+  campaignId: number // internal id — API proof fetch
+  onchainId: number  // contract id — claim() call
+}
 
 export interface ClaimResult {
   txHash: `0x${string}`
@@ -13,12 +17,13 @@ export interface ClaimResult {
 
 /**
  * Claims a reward on-chain:
- *   1. Fetch amount + Merkle proof from the backend
- *   2. claim(campaignId, account, amount, proof) on the RewardDistributor
- *      (MetaMask popup — the signature IS the auth; no SIWE involved)
+ *   1. Fetch amount + Merkle proof from the backend (INTERNAL campaign id —
+ *      reward_claims is keyed by it)
+ *   2. claim(onchainId, account, amount, proof) on the RewardDistributor
+ *      (ONCHAIN id — the contract has never heard of our PKs; translation
+ *      happens exactly here, the chain boundary)
  *   3. Wait for inclusion so the UI flip is truthful
- *   4. Invalidate wallet-claims — chainwatch's ClaimWatcher mirrors the
- *      event into the DB within a poll cycle, so refetch converges to truth
+ *   4. Invalidate wallet-claims to converge on backend truth
  *
  * AlreadyClaimed reverts are treated as reconciliation (stale UI), not errors.
  */
@@ -28,8 +33,8 @@ export function useClaimReward() {
   const { writeContractAsync } = useWriteContract()
   const queryClient = useQueryClient()
 
-  return useMutation<ClaimResult, Error, number>({
-    mutationFn: async (campaignId) => {
+  return useMutation<ClaimResult, Error, ClaimArgs>({
+    mutationFn: async ({ campaignId, onchainId }) => {
       if (!address) throw new Error('No wallet connected')
       if (!publicClient) throw new Error('No client for claim chain')
 
@@ -43,9 +48,9 @@ export function useClaimReward() {
         address: DISTRIBUTOR_ADDRESS,
         abi: distributorAbi,
         functionName: 'claim',
-        chainId: CHAIN_ID,           // pinned — wagmi prompts a network switch if needed
+        chainId: CHAIN_ID, // pinned — wagmi prompts a network switch if needed
         args: [
-          BigInt(campaignId),
+          BigInt(onchainId),
           address,
           BigInt(proof.amount),
           proof.proof,
@@ -59,7 +64,7 @@ export function useClaimReward() {
       return { txHash, campaignId }
     },
 
-    onSettled: (_data, _error) => {
+    onSettled: () => {
       // success or failure, converge on backend truth
       queryClient.invalidateQueries({ queryKey: ['wallet-claims', address?.toLowerCase()] })
     },
