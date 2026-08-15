@@ -4,6 +4,7 @@ import { useConnection, useChainId, useSignMessage } from 'wagmi'
 import { SiweMessage } from 'siwe'
 import { authApi, AuthenticatedWallet } from '@/lib/api/auth'
 import { toast } from 'sonner'
+import { CHAIN_ID } from '@/lib/contracts'
 
 const MESSAGE_EXPIRATION_MS = 5 * 60_000  // 5 minutes — should outlive the user clicking "Sign"
 
@@ -44,7 +45,7 @@ export function useSiweLogin() {
         statement: 'Sign in to Reflow.',
         uri: window.location.origin,
         version: '1',
-        chainId,
+        chainId: CHAIN_ID,
         nonce,
         issuedAt: now.toISOString(),
         expirationTime: new Date(now.getTime() + MESSAGE_EXPIRATION_MS).toISOString(),

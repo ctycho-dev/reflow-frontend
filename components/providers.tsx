@@ -10,14 +10,13 @@ import { useState } from 'react'
 
 
 const config = createConfig({
-  chains: [mainnet, baseSepolia],
+  chains: [baseSepolia],
   connectors: [
     injected({
-      target: 'metaMask',  // pin to MetaMask specifically, ignore other injected providers
+      target: 'metaMask',
     }),
   ],
   transports: {
-    [mainnet.id]: http(),
     [baseSepolia.id]: http('https://sepolia.base.org'),
   },
   storage: createStorage({ storage: cookieStorage }),
